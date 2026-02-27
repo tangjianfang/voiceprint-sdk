@@ -81,12 +81,20 @@ ipch/
 reports/*.txt
 
 # ============================================================
-# Test data (large audio files)
+# Test data (large audio files — run testdata/download_testdata.ps1 to obtain)
 # ============================================================
+testdata/**/*.wav
+testdata/**/*.flac
+testdata/**/*.mp3
+testdata/**/*.ogg
+testdata/**/*.opus
+testdata/**/*.m4a
 testdata/*.wav
 testdata/*.flac
 testdata/*.mp3
 testdata/voxceleb1/
+testdata/aishell/
+testdata/trials.txt
 
 # ============================================================
 # OS generated files
