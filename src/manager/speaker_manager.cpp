@@ -75,6 +75,10 @@ void SpeakerManager::release() {
     VP_LOG_INFO("SpeakerManager released");
 }
 
+void* SpeakerManager::get_ort_env() {
+    return g_ort_env.get();
+}
+
 bool SpeakerManager::load_cache_from_db() {
     auto speakers = store_->load_all_speakers();
 

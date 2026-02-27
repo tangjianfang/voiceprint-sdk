@@ -21,7 +21,10 @@ enum class ErrorCode {
     BUFFER_TOO_SMALL = -12,
     NO_MATCH = -13,
     WAV_FORMAT = -14,
-    INFERENCE = -15
+    INFERENCE = -15,
+    MODEL_NOT_AVAILABLE = -16,
+    ANALYSIS_FAILED = -17,
+    DIARIZE_FAILED = -18
 };
 
 inline const char* error_code_to_string(ErrorCode code) {
@@ -42,6 +45,9 @@ inline const char* error_code_to_string(ErrorCode code) {
         case ErrorCode::NO_MATCH: return "No matching speaker found";
         case ErrorCode::WAV_FORMAT: return "Invalid WAV format";
         case ErrorCode::INFERENCE: return "Model inference error";
+        case ErrorCode::MODEL_NOT_AVAILABLE: return "Model not available (not loaded)";
+        case ErrorCode::ANALYSIS_FAILED: return "Voice analysis failed";
+        case ErrorCode::DIARIZE_FAILED: return "Speaker diarization failed";
         default: return "Unknown error code";
     }
 }

@@ -52,6 +52,10 @@ public:
     // Get speaker count
     int get_speaker_count() const;
 
+    // Access shared OrtEnv for use by VoiceAnalyzer / Diarizer
+    // Returns nullptr if not yet initialized.
+    static void* get_ort_env();
+
     const std::string& last_error() const { return last_error_; }
 
 private:
