@@ -98,6 +98,23 @@ if(BUILD_TESTS)
         target_link_libraries(evaluation_tests PRIVATE voiceprint)
         target_include_directories(evaluation_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
     endif()
+
+    # Comprehensive API test (tests every public API against testdata/)
+    file(GLOB_RECURSE API_TEST_SOURCES tests/api_test/*.cpp)
+    if(API_TEST_SOURCES)
+        add_executable(api_tests ${API_TEST_SOURCES})
+        target_link_libraries(api_tests PRIVATE voiceprint)
+        target_include_directories(api_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+        # Default: run from build root where models/ and testdata/ are reachable via ..
+        set_target_properties(api_tests PROPERTIES
+            VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME ApiTests
+                 COMMAND api_tests
+                     --models   "${CMAKE_SOURCE_DIR}/models"
+                     --testdata "${CMAKE_SOURCE_DIR}/testdata"
+                     --report   "${CMAKE_SOURCE_DIR}/reports/api_test_report.md"
+                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    endif()
 endif()
 
 # Examples
