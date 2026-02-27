@@ -449,12 +449,246 @@ function vp_get_speaker_count: Integer; cdecl; external 'voiceprint.dll';
 vp_set_threshold(0.50f);
 ```
 
+## 场景七：呼叫中心音质监控（C++）
+
+实时评估客服通话质量，自动标记异常通话供质检审核。
+
+```cpp
+#include <voiceprint/voiceprint_api.h>
+#include <voiceprint/voiceprint_types.h>
+#include <stdio.h>
+
+class CallQualityMonitor {
+public:
+    bool init() {
+        if (vp_init("models", "calls.db") != VP_OK) return false;
+        // 只加载音质评估和情感识别，节省内存
+        return vp_init_analyzer(VP_FEATURE_QUALITY | VP_FEATURE_EMOTION
+                                | VP_FEATURE_STATE) == VP_OK;
+    }
+
+    // 通话结束后评估录音质量
+    void evaluate_call(const char* call_id, const char* wav_path) {
+        VpQualityResult quality = {};
+        VpEmotionResult emotion = {};
+        VpVoiceState    state   = {};
+
+        if (vp_assess_quality_file(wav_path, &quality) == VP_OK) {
+            printf("[通话 %s] MOS=%.2f  SNR=%.1fdB  LUFS=%.1f\n",
+                   call_id, quality.mos_score, quality.snr_db,
+                   quality.loudness_lufs);
+
+            // MOS < 2.5 标记为差质量通话
+            if (quality.mos_score < 2.5f) {
+                flag_for_review(call_id, "音质差");
+            }
+        }
+
+        if (vp_get_emotion_file(wav_path, &emotion) == VP_OK) {
+            const char* name = vp_emotion_name(emotion.dominant_emotion);
+            printf("[通话 %s] 主要情感: %s  置信度: %.2f\n",
+                   call_id, name, emotion.confidence);
+
+            // 检测到愤怒或恐惧，升级处理
+            if (emotion.dominant_emotion == 3 /* angry */
+                || emotion.dominant_emotion == 4 /* fearful */) {
+                flag_for_review(call_id, "客户情绪异常");
+            }
+        }
+
+        if (vp_get_voice_state_file(wav_path, &state) == VP_OK) {
+            if (state.fatigue_level > 0.7f) {
+                flag_for_review(call_id, "客服疲劳度过高");
+            }
+        }
+    }
+
+private:
+    void flag_for_review(const char* call_id, const char* reason) {
+        printf("[质检标记] 通话 %s 原因: %s\n", call_id, reason);
+        // TODO: 写入质检数据库
+    }
+};
+```
+
+---
+
+## 场景八：反伪造身份验证（金融/安防，C++）
+
+结合声纹验证与反欺骗检测，双重确认防止录音重播攻击。
+
+```cpp
+#include <voiceprint/voiceprint_api.h>
+#include <voiceprint/voiceprint_types.h>
+
+class SecureVoiceAuth {
+public:
+    bool init() {
+        if (vp_init("models", "auth.db") != VP_OK) return false;
+        return vp_init_analyzer(VP_FEATURE_ANTISPOOF) == VP_OK;
+    }
+
+    // 注册用户声纹（要求 3 次以上，提高精度）
+    bool enroll(const char* user_id, const char* wav_path) {
+        return vp_enroll_file(user_id, wav_path) == VP_OK;
+    }
+
+    // 双重验证：反欺骗 + 声纹匹配
+    bool authenticate(const char* user_id, const float* pcm, int count) {
+        // 第一步：反欺骗检测
+        VpAntiSpoofResult spoof = {};
+        if (vp_anti_spoof(pcm, count, &spoof) == VP_OK) {
+            if (!spoof.is_genuine || spoof.genuine_score < 0.6f) {
+                printf("[拒绝] 检测到伪造音频 (genuine_score=%.3f)\n",
+                       spoof.genuine_score);
+                return false;
+            }
+        }
+
+        // 第二步：声纹 1:1 验证
+        float match_score = 0.0f;
+        int ret = vp_verify(user_id, pcm, count, &match_score);
+        if (ret != VP_OK || match_score < 0.55f) {
+            printf("[拒绝] 声纹不匹配 (score=%.3f)\n", match_score);
+            return false;
+        }
+
+        printf("[通过] 用户 %s 验证成功 (spoof=%.3f, match=%.3f)\n",
+               user_id, spoof.genuine_score, match_score);
+        return true;
+    }
+};
+```
+
+---
+
+## 场景九：多语言 IVR 自动路由（C#）
+
+根据来电语种自动切换语言服务，支持 99 种语言。
+
+```csharp
+using System;
+using System.Runtime.InteropServices;
+
+public class MultiLangIVR
+{
+    [DllImport("voiceprint.dll", CallingConvention = CallingConvention.Cdecl,
+               CharSet = CharSet.Ansi)]
+    static extern int vp_init(string model_dir, string db_path);
+
+    [DllImport("voiceprint.dll", CallingConvention = CallingConvention.Cdecl,
+               CharSet = CharSet.Ansi)]
+    static extern int vp_init_analyzer(uint features);
+
+    [DllImport("voiceprint.dll", CallingConvention = CallingConvention.Cdecl,
+               CharSet = CharSet.Ansi)]
+    static extern int vp_detect_language_file(string path, out VpLanguageResult result);
+
+    [DllImport("voiceprint.dll", CallingConvention = CallingConvention.Cdecl,
+               CharSet = CharSet.Ansi)]
+    static extern IntPtr vp_language_name(string lang_code);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    struct VpLanguageResult {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 8)]
+        public string LangCode;
+        public float  Confidence;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 8)]
+        public string SecondLang;
+        public float  SecondConf;
+    }
+
+    public void Init() {
+        vp_init("models", null);
+        vp_init_analyzer(0x100); // VP_FEATURE_LANGUAGE
+    }
+
+    public string DetectAndRoute(string wavPath) {
+        VpLanguageResult res;
+        if (vp_detect_language_file(wavPath, out res) != 0) return "en";
+
+        string name = Marshal.PtrToStringAnsi(vp_language_name(res.LangCode));
+        Console.WriteLine($"检测语种: {name} ({res.LangCode}), 置信度: {res.Confidence:F2}");
+
+        return res.LangCode; // 返回语种代码，由上层路由到对应语言客服
+    }
+}
+```
+
+---
+
+## 场景十：声纹分析报告生成（Python via ctypes）
+
+批量处理音频文件，生成综合声纹分析报告。
+
+```python
+import ctypes
+import os
+
+lib = ctypes.CDLL("voiceprint.dll")
+
+# 定义常量
+VP_FEATURE_ALL = 0x1FF
+
+# 定义返回结构体（简化版，实际需完整定义所有字段）
+class VpAnalysisResult(ctypes.Structure):
+    class _Gender(ctypes.Structure):
+        _fields_ = [("gender", ctypes.c_int), ("confidence", ctypes.c_float),
+                    ("female_prob", ctypes.c_float), ("male_prob", ctypes.c_float),
+                    ("child_prob", ctypes.c_float)]
+
+    class _Quality(ctypes.Structure):
+        _fields_ = [("mos_score", ctypes.c_float), ("snr_db", ctypes.c_float),
+                    ("loudness_lufs", ctypes.c_float), ("hnr_db", ctypes.c_float),
+                    ("clarity", ctypes.c_float)]
+
+    # 其余字段省略，完整定义见 include/voiceprint/voiceprint_types.h
+    _fields_ = [
+        ("analyzed_features", ctypes.c_uint),
+        ("gender", _Gender),
+        # ... 其他字段
+    ]
+
+# 函数签名
+lib.vp_init.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+lib.vp_init.restype = ctypes.c_int
+lib.vp_init_analyzer.argtypes = [ctypes.c_uint]
+lib.vp_init_analyzer.restype = ctypes.c_int
+lib.vp_analyze_file.argtypes = [ctypes.c_char_p, ctypes.c_uint,
+                                 ctypes.POINTER(VpAnalysisResult)]
+lib.vp_analyze_file.restype = ctypes.c_int
+lib.vp_emotion_name.argtypes = [ctypes.c_int]
+lib.vp_emotion_name.restype = ctypes.c_char_p
+
+# 初始化
+lib.vp_init(b"models", None)
+lib.vp_init_analyzer(VP_FEATURE_ALL)
+
+# 批量分析
+audio_dir = "testdata/single_speaker"
+for fname in os.listdir(audio_dir):
+    if not fname.endswith(".wav"):
+        continue
+    path = os.path.join(audio_dir, fname).encode()
+    result = VpAnalysisResult()
+    ret = lib.vp_analyze_file(path, VP_FEATURE_ALL, ctypes.byref(result))
+    if ret == 0:
+        gender_str = ["女性", "男性", "儿童"][result.gender.gender]
+        print(f"{fname}: 性别={gender_str}({result.gender.confidence:.2f}), "
+              f"MOS={result.quality.mos_score:.2f}")
+
+lib.vp_release()
+```
+
+---
+
 ## 集成注意事项
 
 1. **DLL 部署**：`voiceprint.dll` 和 `onnxruntime.dll` 必须在同一目录
-2. **模型目录**：`models/` 下需包含 `ecapa_tdnn.onnx` 和 `silero_vad.onnx`
+2. **模型目录**：`models/` 下需包含 `ecapa_tdnn.onnx` 和 `silero_vad.onnx`（必须），其他语音分析模型可选
 3. **线程安全**：所有 API 线程安全，可在多线程环境直接调用
-4. **生命周期**：一个进程只需调用一次 `vp_init`，程序退出前调用 `vp_release`
+4. **生命周期**：一个进程只需调用一次 `vp_init` 和 `vp_init_analyzer`，程序退出前调用 `vp_release`
 5. **音频要求**：16kHz 采样率，单声道，float32 [-1.0, 1.0]，最少 1.5 秒
 6. **增量注册**：同一 ID 多次 enroll 会自动融合，注册 3~5 次可显著提升精度
 7. **数据库持久化**：注册信息自动保存在 SQLite DB 中，重启后无需重新注册
+8. **可选模型降级**：可选语音分析模型缺失时，对应 API 返回 `-16`（VP_ERROR_MODEL_NOT_AVAILABLE），不影响其他功能
