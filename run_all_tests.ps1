@@ -1,49 +1,32 @@
-<#
+﻿<#
 .SYNOPSIS
-    VoicePrint SDK — 一键全量测试脚本
-
-.DESCRIPTION
-    功能：
-      1. 构建 SDK（可选，默认跳过如果 build/ 已存在）
-      2. 运行测试音频下载（可选）
-      3. 运行单元测试      (unit_tests.exe)
-      4. 运行集成测试      (integration_tests.exe)
-      5. 运行 API 全量测试 (api_tests.exe)       ← 覆盖所有接口 + 测试音频
-      6. 运行性能基准测试  (benchmark_tests.exe)
-      7. 合并所有报告到    reports/full_report.md
+    VoicePrint SDK - One-click full test script
 
 .PARAMETER Build
-    强制重新构建（cmake configure + build）
+    Force rebuild (cmake configure + build)
 
 .PARAMETER DownloadTestdata
-    运行 testdata/download_testdata.ps1 下载测试音频
+    Run testdata/download_testdata.ps1 to download test audio
 
 .PARAMETER SkipUnit
-    跳过单元测试
+    Skip unit tests
 
 .PARAMETER SkipIntegration
-    跳过集成测试
+    Skip integration tests
 
 .PARAMETER SkipBenchmark
-    跳过性能基准测试
+    Skip benchmark tests
 
 .PARAMETER SkipApiTest
-    跳过 API 全量测试（主测试）
+    Skip API full test (the main test)
 
 .PARAMETER Config
-    构建配置（Debug 或 Release），默认 Release
+    Build configuration (Debug or Release), default Release
 
 .EXAMPLE
-    # 最简一键运行（假设已经构建过）：
     .\run_all_tests.ps1
-
-    # 先下载音频，再全量测试：
     .\run_all_tests.ps1 -DownloadTestdata
-
-    # 强制重新构建并测试：
     .\run_all_tests.ps1 -Build
-
-    # 只跑 API 测试，其余跳过：
     .\run_all_tests.ps1 -SkipUnit -SkipIntegration -SkipBenchmark
 #>
 
@@ -60,111 +43,82 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Continue"
 
-$ROOT     = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$BUILD    = Join-Path $ROOT "build"
-$BIN      = Join-Path $BUILD "bin\$Config"
-$MODELS   = Join-Path $ROOT "models"
-$TESTDATA = Join-Path $ROOT "testdata"
-$REPORTS  = Join-Path $ROOT "reports"
+$ROOT      = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$BuildDir  = Join-Path $ROOT "build"
+$BinDir    = Join-Path $BuildDir "bin\$Config"
+$MODELS    = Join-Path $ROOT "models"
+$TESTDATA  = Join-Path $ROOT "testdata"
+$REPORTS   = Join-Path $ROOT "reports"
 
-# ANSI color helpers
 function Green($s)  { Write-Host $s -ForegroundColor Green  }
 function Yellow($s) { Write-Host $s -ForegroundColor Yellow }
 function Red($s)    { Write-Host $s -ForegroundColor Red    }
 function Cyan($s)   { Write-Host $s -ForegroundColor Cyan   }
 function White($s)  { Write-Host $s -ForegroundColor White  }
 
-# ──────────────────────────────────────────────────
-# Summary tracking
-# ──────────────────────────────────────────────────
 $Results = [System.Collections.Generic.List[PSObject]]::new()
-
 function Add-Result($Name, $Passed, $Detail = "") {
     $Results.Add([PSCustomObject]@{ Name=$Name; Passed=$Passed; Detail=$Detail })
 }
 
-# ──────────────────────────────────────────────────
-# Header
-# ──────────────────────────────────────────────────
 $StartTime = Get-Date
 Cyan "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-Cyan "   VoicePrint SDK — 一键全量测试"
+Cyan "   VoicePrint SDK - Full Test Suite"
 Cyan "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-White "  时间:    $($StartTime.ToString('yyyy-MM-dd HH:mm:ss'))"
-White "  根目录:  $ROOT"
-White "  构建目录: $BUILD"
-White "  模型目录: $MODELS"
+White "  Time:      $($StartTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+White "  Root:      $ROOT"
+White "  Build dir: $BuildDir"
+White "  Models:    $MODELS"
 White ""
 
-# ──────────────────────────────────────────────────
-# Step 0: Download testdata (optional)
-# ──────────────────────────────────────────────────
 if ($DownloadTestdata) {
-    Cyan "`n[Step 0] 下载测试音频..."
+    Cyan "`n[Step 0] Downloading test audio..."
     $dlScript = Join-Path $TESTDATA "download_testdata.ps1"
     if (Test-Path $dlScript) {
         Push-Location $TESTDATA
         & $dlScript
-        if ($LASTEXITCODE -eq 0) { Green "  下载完成" ; Add-Result "下载测试音频" $true }
-        else                     { Yellow "  下载部分失败（继续）"; Add-Result "下载测试音频" $false "exit=$LASTEXITCODE" }
+        if ($LASTEXITCODE -eq 0) { Green "  Download complete"; Add-Result "Download Testdata" $true }
+        else { Yellow "  Download partially failed (continuing)"; Add-Result "Download Testdata" $false "exit=$LASTEXITCODE" }
         Pop-Location
     } else {
-        Yellow "  testdata/download_testdata.ps1 不存在，跳过"
+        Yellow "  testdata/download_testdata.ps1 not found, skipping"
     }
 }
 
-# ──────────────────────────────────────────────────
-# Step 1: Build
-# ──────────────────────────────────────────────────
-if ($Build -or !(Test-Path (Join-Path $BUILD "voiceprint-sdk.sln"))) {
-    Cyan "`n[Step 1] CMake 构建..."
-
-    if (!(Test-Path $BUILD)) { New-Item -ItemType Directory -Path $BUILD | Out-Null }
-
+if ($Build -or !(Test-Path (Join-Path $BuildDir "voiceprint-sdk.sln"))) {
+    Cyan "`n[Step 1] CMake Build..."
+    if (!(Test-Path $BuildDir)) { New-Item -ItemType Directory -Path $BuildDir | Out-Null }
     Write-Host "  cmake configure..."
-    $cmakeArgs = @(
-        "-B", $BUILD,
-        "-G", "Visual Studio 17 2022",
-        "-A", "x64",
-        "-DCMAKE_BUILD_TYPE=$Config"
-    )
+    $cmakeArgs = @("-B", $BuildDir, "-G", "Visual Studio 17 2022", "-A", "x64", "-DCMAKE_BUILD_TYPE=$Config")
     & cmake $cmakeArgs 2>&1 | ForEach-Object { Write-Host "    $_" }
     if ($LASTEXITCODE -ne 0) {
-        Red "  CMake configure 失败 (exit $LASTEXITCODE)"
+        Red "  CMake configure failed (exit $LASTEXITCODE)"
         Add-Result "CMake Configure" $false "exit=$LASTEXITCODE"
     } else {
         Write-Host "  cmake build..."
-        & cmake --build $BUILD --config $Config --parallel 2>&1 | ForEach-Object { Write-Host "    $_" }
+        & cmake --build $BuildDir --config $Config --parallel 2>&1 | ForEach-Object { Write-Host "    $_" }
         if ($LASTEXITCODE -ne 0) {
-            Red "  Build 失败 (exit $LASTEXITCODE)"
+            Red "  Build failed (exit $LASTEXITCODE)"
             Add-Result "CMake Build" $false "exit=$LASTEXITCODE"
         } else {
-            Green "  Build 成功"
+            Green "  Build succeeded"
             Add-Result "CMake Build" $true
         }
     }
 } else {
-    Yellow "`n[Step 1] 跳过构建（$BUILD 已存在，使用 -Build 强制重建）"
+    Yellow "`n[Step 1] Skipping build ($BuildDir exists, use -Build to force rebuild)"
 }
 
-# Check binaries exist
 function Require-Exe($name) {
-    $path = Join-Path $BIN "$name.exe"
-    if (!(Test-Path $path)) {
-        Yellow "  警告: $name.exe 不存在于 $BIN"
-        return $null
-    }
-    return $path
+    $p = Join-Path $BinDir "$name.exe"
+    if (!(Test-Path $p)) { Yellow "  Warning: $name.exe not found in $BinDir"; return $null }
+    return $p
 }
 
-# Create reports dir
 if (!(Test-Path $REPORTS)) { New-Item -ItemType Directory -Path $REPORTS | Out-Null }
 
-# ──────────────────────────────────────────────────
-# Step 2: Unit Tests
-# ──────────────────────────────────────────────────
 if (!$SkipUnit) {
-    Cyan "`n[Step 2] 单元测试 (unit_tests)..."
+    Cyan "`n[Step 2] Unit Tests (unit_tests)..."
     $exe = Require-Exe "unit_tests"
     if ($exe) {
         Push-Location $ROOT
@@ -172,20 +126,13 @@ if (!$SkipUnit) {
         $passed = $LASTEXITCODE -eq 0
         $out | ForEach-Object { Write-Host "  $_" }
         if ($passed) { Green "  PASS" } else { Red "  FAIL" }
-        Add-Result "单元测试" $passed "exit=$LASTEXITCODE"
+        Add-Result "Unit Tests" $passed "exit=$LASTEXITCODE"
         Pop-Location
-    } else {
-        Add-Result "单元测试" $false "exe 不存在"
-    }
-} else {
-    Yellow "`n[Step 2] 跳过单元测试 (-SkipUnit)"
-}
+    } else { Add-Result "Unit Tests" $false "exe not found" }
+} else { Yellow "`n[Step 2] Skipping unit tests (-SkipUnit)" }
 
-# ──────────────────────────────────────────────────
-# Step 3: Integration Tests
-# ──────────────────────────────────────────────────
 if (!$SkipIntegration) {
-    Cyan "`n[Step 3] 集成测试 (integration_tests)..."
+    Cyan "`n[Step 3] Integration Tests (integration_tests)..."
     $exe = Require-Exe "integration_tests"
     if ($exe) {
         Push-Location $ROOT
@@ -193,46 +140,28 @@ if (!$SkipIntegration) {
         $passed = $LASTEXITCODE -eq 0
         $out | ForEach-Object { Write-Host "  $_" }
         if ($passed) { Green "  PASS" } else { Red "  FAIL" }
-        Add-Result "集成测试" $passed "exit=$LASTEXITCODE"
+        Add-Result "Integration Tests" $passed "exit=$LASTEXITCODE"
         Pop-Location
-    } else {
-        Add-Result "集成测试" $false "exe 不存在"
-    }
-} else {
-    Yellow "`n[Step 3] 跳过集成测试 (-SkipIntegration)"
-}
+    } else { Add-Result "Integration Tests" $false "exe not found" }
+} else { Yellow "`n[Step 3] Skipping integration tests (-SkipIntegration)" }
 
-# ──────────────────────────────────────────────────
-# Step 4: API Comprehensive Test  ← 核心
-# ──────────────────────────────────────────────────
 if (!$SkipApiTest) {
-    Cyan "`n[Step 4] API 全量测试 (api_tests) — 覆盖全部接口..."
+    Cyan "`n[Step 4] API Full Test (api_tests) - covers all public APIs..."
     $exe = Require-Exe "api_tests"
     if ($exe) {
         Push-Location $ROOT
         $apiReport = Join-Path $REPORTS "api_test_report.md"
-        $out = & $exe `
-            --models   $MODELS `
-            --testdata $TESTDATA `
-            --report   $apiReport `
-            2>&1
+        $out = & $exe --models $MODELS --testdata $TESTDATA --report $apiReport 2>&1
         $passed = $LASTEXITCODE -eq 0
         $out | ForEach-Object { Write-Host "  $_" }
-        if ($passed) { Green "  PASS" } else { Red "  FAIL (详见 $apiReport)" }
-        Add-Result "API 全量测试" $passed "exit=$LASTEXITCODE | 报告: $apiReport"
+        if ($passed) { Green "  PASS" } else { Red "  FAIL (see $apiReport)" }
+        Add-Result "API Full Test" $passed "exit=$LASTEXITCODE | report: $apiReport"
         Pop-Location
-    } else {
-        Add-Result "API 全量测试" $false "api_tests.exe 不存在，请先构建 (-Build)"
-    }
-} else {
-    Yellow "`n[Step 4] 跳过 API 全量测试 (-SkipApiTest)"
-}
+    } else { Add-Result "API Full Test" $false "api_tests.exe not found, build first (-Build)" }
+} else { Yellow "`n[Step 4] Skipping API full test (-SkipApiTest)" }
 
-# ──────────────────────────────────────────────────
-# Step 5: Benchmark
-# ──────────────────────────────────────────────────
 if (!$SkipBenchmark) {
-    Cyan "`n[Step 5] 性能基准测试 (benchmark_tests)..."
+    Cyan "`n[Step 5] Benchmark Tests (benchmark_tests)..."
     $exe = Require-Exe "benchmark_tests"
     if ($exe) {
         Push-Location $ROOT
@@ -240,77 +169,61 @@ if (!$SkipBenchmark) {
         $passed = $LASTEXITCODE -eq 0
         $out | ForEach-Object { Write-Host "  $_" }
         if ($passed) { Green "  PASS" } else { Red "  FAIL" }
-        Add-Result "性能基准测试" $passed "exit=$LASTEXITCODE | 报告: reports/benchmark_report.txt"
+        Add-Result "Benchmark Tests" $passed "exit=$LASTEXITCODE | report: reports/benchmark_report.txt"
         Pop-Location
-    } else {
-        Add-Result "性能基准测试" $false "exe 不存在"
-    }
-} else {
-    Yellow "`n[Step 5] 跳过性能基准测试 (-SkipBenchmark)"
-}
+    } else { Add-Result "Benchmark Tests" $false "exe not found" }
+} else { Yellow "`n[Step 5] Skipping benchmark tests (-SkipBenchmark)" }
 
-# ──────────────────────────────────────────────────
-# Step 6: Write merged report
-# ──────────────────────────────────────────────────
 $EndTime  = Get-Date
 $TotalSec = [int]($EndTime - $StartTime).TotalSeconds
-
-$passCount = ($Results | Where-Object { $_.Passed }).Count
-$failCount = ($Results | Where-Object { !$_.Passed }).Count
+$passCount = @($Results | Where-Object { $_.Passed -eq $true }).Count
+$failCount = @($Results | Where-Object { $_.Passed -eq $false }).Count
 $allPass   = $failCount -eq 0
 
 Cyan "`n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-Cyan "  测试汇总"
+Cyan "  Test Summary"
 Cyan "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
 foreach ($r in $Results) {
-    $icon = if ($r.Passed) { "✅" } else { "❌" }
+    $icon = if ($r.Passed) { "[PASS]" } else { "[FAIL]" }
     $line = "  $icon $($r.Name)"
     if ($r.Detail) { $line += "  ($($r.Detail))" }
     if ($r.Passed) { Green $line } else { Red $line }
 }
-
 White ""
-White "  通过: $passCount  失败: $failCount  总用时: ${TotalSec}s"
-if ($allPass) { Green "  全部通过 🎉" } else { Red "  存在失败项，请查看报告" }
+White "  Passed: $passCount  Failed: $failCount  Total time: ${TotalSec}s"
+if ($allPass) { Green "  All tests passed!" } else { Red "  Some tests failed, check reports." }
 
-# Write merged Markdown report
 $fullReport = Join-Path $REPORTS "full_report.md"
 $ts = $StartTime.ToString("yyyy-MM-dd HH:mm:ss")
-$reportLines = @(
-    "# VoicePrint SDK — 全量测试报告",
-    "",
-    "| 项目 | 值 |",
-    "|------|-----|",
-    "| 测试时间 | $ts |",
-    "| 总用时 | ${TotalSec}s |",
-    "| 通过 | $passCount / $($Results.Count) |",
-    "| 失败 | $failCount |",
-    "",
-    "## 阶段汇总",
-    "",
-    "| 阶段 | 结果 | 说明 |",
-    "|------|------|------|"
-)
+$rp = [System.Collections.Generic.List[string]]::new()
+$rp.Add("# VoicePrint SDK - Full Test Report")
+$rp.Add("")
+$rp.Add("| Item | Value |")
+$rp.Add("|------|-------|")
+$rp.Add("| Test Time | $ts |")
+$rp.Add("| Duration  | ${TotalSec}s |")
+$rp.Add("| Passed    | $passCount / $($Results.Count) |")
+$rp.Add("| Failed    | $failCount |")
+$rp.Add("")
+$rp.Add("## Stage Summary")
+$rp.Add("")
+$rp.Add("| Stage | Result | Detail |")
+$rp.Add("|-------|--------|--------|")
 foreach ($r in $Results) {
-    $status = if ($r.Passed) { "✅ PASS" } else { "❌ FAIL" }
-    $reportLines += "| $($r.Name) | $status | $($r.Detail) |"
+    $status = if ($r.Passed) { "PASS" } else { "FAIL" }
+    $rp.Add("| $($r.Name) | $status | $($r.Detail) |")
 }
+$rp.Add("")
+$rp.Add("## Detailed Report Links")
+$rp.Add("")
+$rp.Add("- [API Full Test Report](api_test_report.md)")
+$rp.Add("- [Benchmark Report](benchmark_report.txt)")
+$rp.Add("")
+$rp.Add("---")
+$rp.Add("*Auto-generated by run_all_tests.ps1*")
+[System.IO.File]::WriteAllLines($fullReport, $rp, [System.Text.Encoding]::UTF8)
 
-$reportLines += @(
-    "",
-    "## 详细报告链接",
-    "",
-    "- [API 全量测试报告](api_test_report.md)",
-    "- [性能基准报告](benchmark_report.txt)",
-    "",
-    "---",
-    "*由 run_all_tests.ps1 自动生成*"
-)
-
-$reportLines | Set-Content $fullReport -Encoding UTF8
-White ""
-White "  完整报告: $fullReport"
+White "  Full report: $fullReport"
 Cyan "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-exit ($allPass ? 0 : 1)
+if ($allPass) { exit 0 } else { exit 1 }
